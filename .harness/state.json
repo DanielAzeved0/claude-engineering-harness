@@ -1,0 +1,69 @@
+{
+  "harness_version": "0.1.0",
+  "workflow": {
+    "status": "IDLE",
+    "current_stage": null,
+    "previous_stage": null,
+    "started_at": null,
+    "updated_at": "2026-08-31T19:29:21.459545+00:00"
+  },
+  "task": {
+    "id": null,
+    "title": null,
+    "created_at": null
+  },
+  "iteration": {
+    "current": 0,
+    "max": 10
+  },
+  "loop_detection": {
+    "same_root_cause_count": 0,
+    "last_root_cause_hash": null
+  },
+  "quality_gates": {
+    "build": {
+      "required": true,
+      "status": "PENDING"
+    },
+    "lint": {
+      "required": true,
+      "status": "PENDING"
+    },
+    "unit_tests": {
+      "required": true,
+      "status": "PENDING"
+    },
+    "integration_tests": {
+      "required": false,
+      "status": "PENDING"
+    },
+    "acceptance_tests": {
+      "required": true,
+      "status": "PENDING"
+    },
+    "review": {
+      "required": true,
+      "status": "PENDING"
+    }
+  },
+  "artifacts": {
+    "task": ".harness/task/TASK.md",
+    "spec": ".harness/spec/SPEC.md",
+    "plan": ".harness/plan/PLAN.md",
+    "execution_log": ".harness/execution/EXECUTION_LOG.md",
+    "test_results": ".harness/tests/TEST_RESULTS.json",
+    "diagnosis": ".harness/diagnosis/DIAGNOSIS.md",
+    "review": ".harness/review/REVIEW.md",
+    "final_report": ".harness/reports/FINAL_REPORT.md"
+  },
+  "last_result": {
+    "agent": null,
+    "status": null,
+    "summary": null
+  },
+  "escalation": {
+    "required": false,
+    "reason": null
+  },
+  "history": []
+}

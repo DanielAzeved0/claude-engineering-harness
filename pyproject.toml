@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "claude-engineering-harness"
+version = "0.1.0"
+description = "Deterministic workflow controller for an AI engineering harness"
+requires-python = ">=3.10"
+authors = [
+{ name = "Daniel Azevedo" }
+]
+
+[project.scripts]
+harness = "harness.cli:main"
+
+[tool.setuptools]
+packages = ["harness"]
