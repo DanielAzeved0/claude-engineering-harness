@@ -6,19 +6,30 @@ import json
 from pathlib import Path
 from typing import Any
 
+from harness.iteration import (
+    increment_iteration,
+    iteration_limit_exceeded,
+    register_root_cause,
+    root_cause_repeated_too_often,
+)
 from harness.models import parse_agent_result
 from harness.state import load_state, now_iso, save_state
 from harness.transitions import TERMINAL_STAGES, get_next_stage
 
 
-def _apply_stage_transition(workflow: dict, outcome: str) -> tuple:
+def _apply_stage_transition(state: dict, outcome: str) -> tuple:
     """
-    Compute and apply the next stage for the given workflow dict, using
-    the transition engine in transitions.py as the single source of
-    truth. Mutates `workflow` only after the transition has been
-    validated, so a rejected outcome never leaves partial state behind.
+    Compute and apply the next stage for the given state, using the
+    transition engine in transitions.py as the single source of truth.
+    Mutates `state` only after the transition has been validated, so a
+    rejected outcome never leaves partial state behind.
+
+    If the computed next stage is DIAGNOSIS and the iteration limit has
+    been reached, the workflow is escalated instead of entering another
+    diagnosis cycle.
     """
 
+    workflow = state["workflow"]
     current_stage = workflow["current_stage"]
 
     if current_stage is None:
@@ -30,6 +41,18 @@ def _apply_stage_transition(workflow: dict, outcome: str) -> tuple:
         current_stage=current_stage,
         outcome=outcome,
     )
+
+    if next_stage == "DIAGNOSIS":
+        increment_iteration(state)
+
+        if iteration_limit_exceeded(state):
+            next_stage = "ESCALATED"
+            state["escalation"] = {
+                "required": True,
+                "reason": (
+                    f"Iteration limit reached ({state['iteration']['max']})."
+                ),
+            }
 
     workflow["previous_stage"] = current_stage
     workflow["current_stage"] = next_stage
@@ -48,7 +71,7 @@ def transition(outcome: str) -> dict[str, Any]:
 
     outcome = outcome.upper()
 
-    previous_stage, next_stage = _apply_stage_transition(workflow, outcome)
+    previous_stage, next_stage = _apply_stage_transition(state, outcome)
 
     state["history"].append(
         {
@@ -109,8 +132,23 @@ def process_result_file(path) -> dict[str, Any]:
         )
 
     previous_stage, next_stage = _apply_stage_transition(
-        workflow, agent_result.outcome
+        state, agent_result.outcome
     )
+
+    if agent_result.stage == "DIAGNOSIS" and next_stage == "FIXING":
+        root_cause = str(agent_result.metadata.get("root_cause") or agent_result.summary)
+        repeat_count = register_root_cause(state, root_cause)
+
+        if root_cause_repeated_too_often(repeat_count):
+            next_stage = "ESCALATED"
+            workflow["current_stage"] = "ESCALATED"
+            workflow["status"] = "ESCALATED"
+            state["escalation"] = {
+                "required": True,
+                "reason": (
+                    f"Root cause repeated {repeat_count} times without resolution."
+                ),
+            }
 
     state["last_result"] = {
         "agent": agent_result.agent,
@@ -184,6 +222,11 @@ def start_task(task_id: str, title: str) -> dict[str, Any]:
     state["loop_detection"] = {
         "same_root_cause_count": 0,
         "last_root_cause_hash": None,
+    }
+
+    state["escalation"] = {
+        "required": False,
+        "reason": None,
     }
 
     state["history"] = [

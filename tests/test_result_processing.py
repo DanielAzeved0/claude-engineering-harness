@@ -182,6 +182,137 @@ class ResultProcessingTestCase(unittest.TestCase):
         with self.assertRaises(ValueError):
             process_result_file(result_path)
 
+    def test_iteration_increments_on_diagnosis_entry(self):
+        self._advance_to_testing()
+
+        result_path = self._write_result(
+            "tester-result.json",
+            {
+                "agent": "tester",
+                "stage": "TESTING",
+                "outcome": "FAIL",
+                "summary": "Simulated test failure",
+            },
+        )
+        process_result_file(result_path)
+
+        state = load_state()
+        self.assertEqual(state["iteration"]["current"], 1)
+
+    def test_iteration_limit_forces_escalation(self):
+        start_task("T-3", "Task that loops forever")
+        transition("SUCCESS")  # TASK -> SPECIFICATION
+        transition("SUCCESS")  # SPECIFICATION -> PLANNING
+        transition("SUCCESS")  # PLANNING -> EXECUTION
+
+        for _ in range(10):
+            transition("FAIL")     # EXECUTION -> DIAGNOSIS
+            transition("SUCCESS")  # DIAGNOSIS -> FIXING
+            transition("SUCCESS")  # FIXING -> EXECUTION
+
+        state = load_state()
+        self.assertEqual(state["iteration"]["current"], 10)
+        self.assertEqual(state["workflow"]["current_stage"], "EXECUTION")
+
+        result = transition("FAIL")  # would be the 11th DIAGNOSIS entry
+
+        self.assertEqual(result["to"], "ESCALATED")
+        self.assertEqual(result["status"], "ESCALATED")
+
+        state = load_state()
+        self.assertTrue(state["escalation"]["required"])
+        self.assertIn("Iteration limit", state["escalation"]["reason"])
+
+    def test_repeated_root_cause_forces_escalation(self):
+        start_task("T-4", "Task with recurring bug")
+        transition("SUCCESS")  # TASK -> SPECIFICATION
+        transition("SUCCESS")  # SPECIFICATION -> PLANNING
+        transition("SUCCESS")  # PLANNING -> EXECUTION
+        transition("FAIL")     # EXECUTION -> DIAGNOSIS
+
+        for i in range(2):
+            result_path = self._write_result(
+                f"diagnosis-result-{i}.json",
+                {
+                    "agent": "debugger",
+                    "stage": "DIAGNOSIS",
+                    "outcome": "SUCCESS",
+                    "summary": "Found the bug",
+                    "metadata": {"root_cause": "Null pointer in auth middleware"},
+                },
+            )
+            result = process_result_file(result_path)
+            self.assertEqual(result["to"], "FIXING")
+
+            transition("FAIL")  # FIXING -> DIAGNOSIS (fix didn't work)
+
+        result_path = self._write_result(
+            "diagnosis-result-2.json",
+            {
+                "agent": "debugger",
+                "stage": "DIAGNOSIS",
+                "outcome": "SUCCESS",
+                "summary": "Found the bug again",
+                "metadata": {"root_cause": "Null pointer in auth middleware"},
+            },
+        )
+        result = process_result_file(result_path)
+
+        self.assertEqual(result["to"], "ESCALATED")
+
+        state = load_state()
+        self.assertEqual(state["loop_detection"]["same_root_cause_count"], 3)
+        self.assertTrue(state["escalation"]["required"])
+        self.assertIn("Root cause", state["escalation"]["reason"])
+
+    def test_different_root_causes_do_not_trigger_escalation(self):
+        start_task("T-5", "Task with varied bugs")
+        transition("SUCCESS")  # TASK -> SPECIFICATION
+        transition("SUCCESS")  # SPECIFICATION -> PLANNING
+        transition("SUCCESS")  # PLANNING -> EXECUTION
+        transition("FAIL")     # EXECUTION -> DIAGNOSIS
+
+        for i in range(5):
+            result_path = self._write_result(
+                f"diagnosis-varied-{i}.json",
+                {
+                    "agent": "debugger",
+                    "stage": "DIAGNOSIS",
+                    "outcome": "SUCCESS",
+                    "summary": "Found a bug",
+                    "metadata": {"root_cause": f"Cause number {i}"},
+                },
+            )
+            result = process_result_file(result_path)
+            self.assertEqual(result["to"], "FIXING")
+            transition("FAIL")  # FIXING -> DIAGNOSIS
+
+        state = load_state()
+        self.assertEqual(state["loop_detection"]["same_root_cause_count"], 1)
+        self.assertFalse(state["escalation"]["required"])
+
+    def test_root_cause_falls_back_to_summary_when_metadata_missing(self):
+        start_task("T-6", "Task without metadata")
+        transition("SUCCESS")  # TASK -> SPECIFICATION
+        transition("SUCCESS")  # SPECIFICATION -> PLANNING
+        transition("SUCCESS")  # PLANNING -> EXECUTION
+        transition("FAIL")     # EXECUTION -> DIAGNOSIS
+
+        result_path = self._write_result(
+            "diagnosis-no-metadata.json",
+            {
+                "agent": "debugger",
+                "stage": "DIAGNOSIS",
+                "outcome": "SUCCESS",
+                "summary": "Auth middleware null pointer",
+            },
+        )
+        process_result_file(result_path)
+
+        state = load_state()
+        self.assertIsNotNone(state["loop_detection"]["last_root_cause_hash"])
+        self.assertEqual(state["loop_detection"]["same_root_cause_count"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()
