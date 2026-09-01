@@ -4,6 +4,7 @@ Command-line interface for the Claude Engineering Harness.
 
 import argparse
 import sys
+from datetime import datetime
 
 from harness.controller import process_result_file, start_task, transition
 from harness.roles import build_agent_context, get_role_template_path
@@ -51,6 +52,62 @@ def print_status() -> None:
         if allowed:
             print()
             print("Allowed Outcomes: " + ", ".join(allowed))
+
+    print()
+
+
+def _format_history(history: list[dict]) -> list[str]:
+    lines = []
+    previous_timestamp = None
+
+    for index, entry in enumerate(history, start=1):
+        timestamp = entry.get("timestamp")
+        delta_str = ""
+
+        if previous_timestamp and timestamp:
+            delta = (
+                datetime.fromisoformat(timestamp)
+                - datetime.fromisoformat(previous_timestamp)
+            )
+            delta_str = f" (+{delta.total_seconds():.1f}s)"
+
+        from_stage = entry.get("from")
+        to_stage = entry.get("to")
+        outcome = entry.get("outcome")
+        agent = entry.get("agent", "-")
+        summary = entry.get("summary", "")
+
+        line = f"{index}. {from_stage} -> {to_stage} [{outcome}] agent={agent} @ {timestamp}{delta_str}"
+
+        if summary:
+            line += f"\n   {summary}"
+
+        lines.append(line)
+        previous_timestamp = timestamp or previous_timestamp
+
+    return lines
+
+
+def command_history(_: argparse.Namespace) -> None:
+    try:
+        state = load_state()
+    except FileNotFoundError as error:
+        print(f"Error: {error}")
+        sys.exit(1)
+
+    history = state["history"]
+
+    print()
+    print("Workflow History")
+    print("=" * 32)
+
+    if not history:
+        print("(no history yet)")
+        print()
+        return
+
+    for line in _format_history(history):
+        print(line)
 
     print()
 
@@ -220,6 +277,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Show the role responsible for the current stage",
     )
     role_parser.set_defaults(func=command_role)
+
+    history_parser = subparsers.add_parser(
+        "history",
+        help="Show workflow history timeline",
+    )
+    history_parser.set_defaults(func=command_history)
 
     return parser
 
