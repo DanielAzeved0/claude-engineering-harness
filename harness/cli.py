@@ -6,6 +6,7 @@ import argparse
 import sys
 
 from harness.controller import process_result_file, start_task, transition
+from harness.roles import build_agent_context, get_role_template_path
 from harness.state import initialize_state, load_state
 from harness.transitions import get_allowed_outcomes
 
@@ -134,6 +135,22 @@ def command_result(args: argparse.Namespace) -> None:
     print()
 
 
+def command_role(_: argparse.Namespace) -> None:
+    try:
+        state = load_state()
+        context = build_agent_context(state)
+    except (FileNotFoundError, ValueError) as error:
+        print(f"Error: {error}")
+        sys.exit(1)
+
+    print()
+    print(f"Stage: {context['stage']}")
+    print(f"Role: {context['role']}")
+    print(f"Template: {get_role_template_path(context['role'])}")
+    print(f"Expected artifact: {context['artifact_path']}")
+    print()
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="harness",
@@ -197,6 +214,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     result_parser.set_defaults(func=command_result)
+
+    role_parser = subparsers.add_parser(
+        "role",
+        help="Show the role responsible for the current stage",
+    )
+    role_parser.set_defaults(func=command_role)
 
     return parser
 

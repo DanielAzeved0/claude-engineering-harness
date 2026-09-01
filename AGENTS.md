@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> Descreve os papéis de agente (lógicos) do Claude Engineering Harness: suas responsabilidades, artefatos e limites. **Status atual: nenhum destes papéis é invocado automaticamente pelo código hoje.** Os templates de prompt já existem como arquivos estáticos em `roles/*.md`, mas nada em `harness/*.py` os carrega ou executa — isso é trabalho da Fase 4 (`ROADMAP.md`). Este documento descreve o *design pretendido*, não uma funcionalidade em produção.
+> Descreve os papéis de agente (lógicos) do Claude Engineering Harness: suas responsabilidades, artefatos e limites. **Status atual: o mapeamento estágio → papel e o carregamento de templates já são código de produção** (`harness/roles.py`, exposto via `harness role`) — ver "Implementação atual dos papéis" abaixo. O que ainda não existe é a invocação automática de um agente de IA de verdade usando esse contexto; isso é trabalho da Fase 5 (`ROADMAP.md`), o Claude Code Runner. Este documento descreve tanto o comportamento já implementado quanto o *design pretendido* das fases seguintes.
 
 ## Contrato fundamental entre agentes e o Harness
 
@@ -61,8 +61,8 @@ Documentação final: atualizar README, documentar arquitetura, mudanças de API
 | REVIEW | REVIEWER |
 | DOCUMENTATION | DOCUMENTER |
 
-Esse mapeamento ainda não está codificado em `harness/*.py` — é a base conceitual para a Fase 4.
+Esse mapeamento já está codificado em `harness/roles.py` (`STAGE_ROLE_MAP`) e é consultável via `harness role`. O que falta é a Fase 5 (Claude Code Runner) invocar automaticamente um agente de IA de verdade usando esse contexto.
 
 ## Implementação atual dos papéis
 
-Hoje, **todos os papéis são executados manualmente** — por um humano ou por um script/agente externo ao Harness que produz o JSON de resultado e roda `harness result PATH`. Não há diferenciação de prompt, contexto ou modelo por papel dentro do código Python; isso é puramente convenção de uso até a Fase 4/5 serem implementadas. Os templates em `roles/*.md` podem ser usados manualmente (copiados para uma sessão de Claude Code, por exemplo) como guia de comportamento esperado para cada papel, mas não são carregados programaticamente.
+Hoje, `harness/roles.py` já faz a diferenciação de papel em código: mapeia estágio → papel (`STAGE_ROLE_MAP`), resolve o caminho do template (`get_role_template_path`) e carrega o conteúdo de `roles/*.md` programaticamente (`load_role_prompt`), montando o contexto do agente (`build_agent_context`). O comando `harness role` expõe esse mapeamento via CLI. O que ainda não existe é a execução automática: nenhum agente de IA de verdade é invocado com esse contexto — os papéis continuam sendo executados manualmente, por um humano ou por um script/agente externo ao Harness que produz o JSON de resultado e roda `harness result PATH`. Isso é trabalho da Fase 5 (Claude Code Runner).
