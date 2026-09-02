@@ -24,7 +24,7 @@ Este é um **sistema de orquestração e controle de engenharia**, não um chatb
 
 O sistema deve eventualmente permitir que um usuário forneça um pedido de alto nível (ex.: "Crie um sistema de autenticação com JWT, login, registro, hashing de senha, rotas protegidas, testes e documentação") e o Harness coordene todo o processo de engenharia — do `TASK` ao `COMPLETE` — delegando cada etapa a um papel de agente especializado, mas mantendo o **controlador determinístico** como autoridade sobre as transições de estado.
 
-**Status atual:** essa orquestração de ponta a ponta ainda **não existe**. Hoje o sistema requer que um humano (ou um script externo) rode `harness start` e produza os arquivos de resultado de agente; não há invocação automática de um agente de codificação. Veja `ROADMAP.md`.
+**Status atual:** a invocação automática de um agente por estágio já existe (`harness agent-run`, Fase 6), mas a orquestração de ponta a ponta continua **não existindo** — um humano ainda dispara cada estágio manualmente, um de cada vez; não há loop autônomo entre `TASK` e `COMPLETE`. Veja `ROADMAP.md` (Fase 8).
 
 ## Agente de codificação principal
 

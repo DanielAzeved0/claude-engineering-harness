@@ -275,11 +275,20 @@ def build_agent_prompt(context: dict, role_prompt: str, result_path: Path) -> st
     allowed_outcomes = get_allowed_outcomes(context["stage"])
 
     return (
+        "## Harness Override\n\n"
+        "This section overrides anything below it, including the role "
+        "description. You do not control, execute, or trigger workflow "
+        "transitions. You never run `harness transition`, `harness "
+        "result`, `harness agent-run`, or any other Harness command. You "
+        "only report your outcome by writing the JSON file described in "
+        "'Harness Result Protocol' below — the Harness process applies "
+        "the transition after you exit.\n\n"
         f"{role_prompt}\n\n"
         "## Harness Context\n\n"
         f"- Task ID: {context['task_id']}\n"
         f"- Task Title: {context['task_title']}\n"
         f"- Stage: {context['stage']}\n"
+        f"- Expected artifact: {context['artifact_path']}\n"
         f"- Iteration: {context['iteration']}\n"
         f"- Last result summary: {context['last_result_summary']}\n\n"
         "## Harness Result Protocol\n\n"
@@ -296,7 +305,8 @@ def build_agent_prompt(context: dict, role_prompt: str, result_path: Path) -> st
         "}\n\n"
         "You report the outcome. You do NOT choose or execute the next "
         "workflow stage — the Harness applies the transition "
-        "deterministically based on what you report."
+        "deterministically based on what you report. Do not run any "
+        "Harness command yourself."
     )
 
 
@@ -316,6 +326,20 @@ def run_current_stage(
 
     outcome = runner.run(prompt, timeout_seconds)
 
+    def _write_fallback(reason: str) -> None:
+        fallback = {
+            "agent": context["role"].lower(),
+            "stage": context["stage"],
+            "outcome": "FAIL",
+            "summary": f"Agent {reason}.",
+            "metadata": {
+                "stdout_tail": outcome.stdout[-500:],
+                "stderr_tail": outcome.stderr[-500:],
+            },
+        }
+        result_path.parent.mkdir(parents=True, exist_ok=True)
+        result_path.write_text(json.dumps(fallback), encoding="utf-8")
+
     if not result_path.is_file():
         if outcome.timed_out:
             reason = f"timed out after {timeout_seconds}s"
@@ -324,17 +348,10 @@ def run_current_stage(
                 "exited without producing a result file "
                 f"(exit_code={outcome.exit_code})"
             )
+        _write_fallback(reason)
 
-        fallback = {
-            "agent": context["role"].lower(),
-            "stage": context["stage"],
-            "outcome": "FAIL",
-            "summary": f"Agent {reason}.",
-            "metadata": {
-                "stdout_tail": outcome.stdout[-2000:],
-                "stderr_tail": outcome.stderr[-2000:],
-            },
-        }
-        result_path.write_text(json.dumps(fallback), encoding="utf-8")
-
-    return process_result_file(result_path)
+    try:
+        return process_result_file(result_path)
+    except ValueError:
+        _write_fallback("wrote an unusable result file")
+        return process_result_file(result_path)

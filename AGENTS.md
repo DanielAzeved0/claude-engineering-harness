@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> Descreve os papéis de agente (lógicos) do Claude Engineering Harness: suas responsabilidades, artefatos e limites. **Status atual: o mapeamento estágio → papel e o carregamento de templates já são código de produção** (`harness/roles.py`, exposto via `harness role` — Fase 5 do `ROADMAP.md`, ✅ completa). O que ainda não existe é a invocação automática de um agente de IA de verdade usando esse contexto; isso é trabalho da Fase 6 (`ROADMAP.md`), o Claude Code Runner. Este documento descreve tanto o comportamento já implementado quanto o *design pretendido* das fases seguintes.
+> Descreve os papéis de agente (lógicos) do Claude Engineering Harness: suas responsabilidades, artefatos e limites. **Status atual: o mapeamento estágio → papel, o carregamento de templates, e a invocação automática do Claude Code já são código de produção** (`harness/roles.py` + `harness/agents/` + `harness/controller.py::run_current_stage`, expostos via `harness role` e `harness agent-run` — Fases 5 e 6 do `ROADMAP.md`, ✅ completas). Este documento descreve o comportamento já implementado — só o loop autônomo entre estágios (Fase 8) ainda falta.
 
 ## Contrato fundamental entre agentes e o Harness
 
@@ -65,12 +65,12 @@ Documentação final: atualizar README, documentar arquitetura, mudanças de API
 | REVIEW | REVIEWER |
 | DOCUMENTATION | DOCUMENTER |
 
-Esse mapeamento já está codificado em `harness/roles.py` (`STAGE_ROLE_MAP`) e é consultável via `harness role`. O que falta é a Fase 6 (Claude Code Runner) invocar automaticamente um agente de IA de verdade usando esse contexto.
+Esse mapeamento já está codificado em `harness/roles.py` (`STAGE_ROLE_MAP`) e é consultável via `harness role`. A Fase 6 (Claude Code Runner) já usa esse mapeamento pra invocar automaticamente um agente de IA de verdade via `harness agent-run`.
 
 ## Implementação atual dos papéis
 
-Hoje, `harness/roles.py` já faz a diferenciação de papel em código: mapeia estágio → papel (`STAGE_ROLE_MAP`), resolve o caminho do template (`get_role_template_path`, relativo ao pacote — funciona de qualquer diretório) e carrega o conteúdo de `roles/*.md` programaticamente (`load_role_prompt`), montando o contexto do agente (`build_agent_context`: papel, artefato esperado, task id/title, resumo do último resultado, iteração atual). O comando `harness role` expõe esse mapeamento via CLI — mostra o estágio atual, o papel responsável, o caminho do template e o artefato esperado, útil pra um operador humano saber qual papel/prompt usar manualmente enquanto a Fase 6 não existe.
+Hoje, `harness/roles.py` já faz a diferenciação de papel em código: mapeia estágio → papel (`STAGE_ROLE_MAP`), resolve o caminho do template (`get_role_template_path`, relativo ao pacote — funciona de qualquer diretório) e carrega o conteúdo de `roles/*.md` programaticamente (`load_role_prompt`), montando o contexto do agente (`build_agent_context`: papel, artefato esperado, task id/title, resumo do último resultado, iteração atual). O comando `harness role` expõe esse mapeamento via CLI — mostra o estágio atual, o papel responsável, o caminho do template e o artefato esperado, útil pra um operador humano saber qual papel/prompt está em jogo em cada `harness agent-run`.
 
-O que ainda não existe é a execução automática: nenhum agente de IA de verdade é invocado com esse contexto — os papéis continuam sendo executados manualmente, por um humano ou por um script/agente externo ao Harness que produz o JSON de resultado e roda `harness result PATH`. Isso é trabalho da Fase 6 (Claude Code Runner).
+A execução automática já existe: `harness agent-run` invoca o Claude Code de verdade com esse contexto (`harness/agents/claude_code.py::ClaudeCodeRunner`). Um humano ou script externo ainda pode operar manualmente também, produzindo o JSON de resultado e rodando `harness result PATH` — os dois caminhos convergem no mesmo Agent Result Protocol. Não existe loop automático entre estágios ainda (Fase 8).
 
 Depois do fato, `harness history` (Fase 9, parcial) mostra a timeline de quais papéis agiram, em qual ordem, com qual resultado e resumo — útil pra auditar uma sessão de trabalho manual guiada pelos papéis.

@@ -67,13 +67,16 @@
 
 ## Fase 6 — Claude Code Runner
 
-**Status: ⬜ NÃO INICIADO**
+**Status: ✅ COMPLETO**
 
-Escopo planejado: invocação do Claude Code, geração de prompt, monitoramento de execução, coleta de saída, geração de resultado estruturado (compatível com `harness/models.py::AgentResult`), tratamento de erro e timeout. Estrutura-alvo: `harness/agents/base.py`, `harness/agents/claude_code.py`.
+- `harness/agents/base.py`: `AgentRunner` (ABC), `AgentRunOutcome`, `AgentRunError` — interface independente de qualquer agente específico
+- `harness/agents/claude_code.py::ClaudeCodeRunner`: invoca o CLI `claude` via `subprocess` em modo não-interativo (`-p`, `--output-format json`, `--dangerously-skip-permissions`)
+- `harness/controller.py::build_agent_prompt`: monta o prompt (template do papel + contexto + instruções explícitas do Agent Result Protocol), com um bloco de override no topo deixando claro que o agente nunca executa transições
+- `harness/controller.py::run_current_stage`: orquestra a execução — invoca o runner, lê o resultado, sintetiza um `FAIL` automaticamente se o agente travar, sair sem escrever nada, ou escrever um resultado inutilizável
+- CLI: `harness agent-run` (sem argumento de papel, deriva do estágio atual; `--timeout` opcional)
+- Testes automatizados (`tests/test_agents_base.py`, `tests/test_claude_code_runner.py`, `tests/test_run_current_stage.py`, `tests/test_cli_agent_run.py`) — nenhum invoca um Claude Code de verdade
 
-**Dependência:** consome o mapeamento estágio → papel da Fase 5 (`harness/roles.py::build_agent_context`), **já implementada**. Esta é a próxima fase que de fato valida o Role System ponta a ponta — hoje nenhum agente real é invocado, `build_agent_context` só é consumido manualmente via `harness role`.
-
-Objetivo: permitir que o Harness invoque o Claude Code automaticamente.
+**Objetivo alcançado:** o Harness já invoca o Claude Code automaticamente — primeira vez que o Role System (Fase 5) e o Artifact System (Fase 4) são exercitados ponta a ponta, não só manualmente. Não existe loop autônomo entre estágios ainda (isso é a Fase 8) — um humano dispara `harness agent-run` manualmente, uma vez por estágio.
 
 ## Fase 7 — Quality Gates
 
@@ -132,9 +135,9 @@ Possíveis funcionalidades: visualização de workflow/agente, monitoramento de 
 | `harness resume` | ⬜ Planejado |
 | `harness reset` | ⬜ Planejado |
 | `harness doctor` | ⬜ Planejado |
-| `harness agent run ROLE` | ⬜ Planejado (Fase 6) |
+| `harness agent-run` | ✅ Implementado (Fase 6) |
 | `harness test` / `harness diagnose` / `harness document` / `harness config` | ⬜ Planejado |
 
 ## Próximo passo recomendado
 
-**Fase 6 — Claude Code Runner.** Fases 3, 4, 5 e 9 (parcial) estão completas (ver commits `e25e282`..`f5e09d0` em `main`) — as Fases 3, 5 e 9 foram implementadas em paralelo fora da ordem estritamente sequencial deste roadmap (eram independentes o suficiente), e a Fase 4 fechou logo em seguida. A Fase 6 é a peça que de fato aumenta a superfície de risco do projeto (primeira vez que o Harness invoca algo externo automaticamente), mas também é o que desbloqueia validar o Role System (Fase 5) e o Artifact System (Fase 4) ponta a ponta pela primeira vez — hoje os dois só são exercitados manualmente.
+**Fase 4 (Artifact System), Fase 5 (Role System) e Fase 6 (Runner) já se conectam ponta a ponta** — `harness agent-run` invoca o Claude Code, que agora sabe (via o prompt montado) qual artefato o Harness espera em cada estágio. A próxima fase recomendada é a **Fase 7 — Quality Gates**: hoje `state.quality_gates` existe no schema mas nada o avalia; com o Runner produzindo resultados reais, dá pra popular esses gates com sinais de verdade antes de avançar pra Fase 8 (Autonomous Loop), que depende das três fases anteriores (5, 6, 7) estarem prontas — e que também é onde os riscos identificados na revisão de segurança da Fase 6 (falha de infraestrutura confundida com falha de tarefa, injeção via contexto do prompt, detecção de adulteração de `state.json`) precisam estar resolvidos antes de remover o checkpoint humano por estágio.

@@ -55,6 +55,42 @@ class SilentRunner(AgentRunner):
         )
 
 
+class TruncatedResultRunner(AgentRunner):
+    """Simulates an agent killed mid-write, leaving an unusable result file."""
+
+    def run(self, prompt, timeout_seconds):
+        result_path = ResultWritingRunner._extract_result_path(prompt)
+        result_path.parent.mkdir(parents=True, exist_ok=True)
+        result_path.write_text('{"agent": "tester", "stage": "TASK"', encoding="utf-8")
+        return AgentRunOutcome(
+            completed=False, timed_out=True, exit_code=None, stdout="", stderr=""
+        )
+
+
+class RecordingRunner(AgentRunner):
+    def __init__(self):
+        self.received_timeout = None
+
+    def run(self, prompt, timeout_seconds):
+        self.received_timeout = timeout_seconds
+        result_path = ResultWritingRunner._extract_result_path(prompt)
+        result_path.parent.mkdir(parents=True, exist_ok=True)
+        result_path.write_text(
+            json.dumps(
+                {
+                    "agent": "maestro",
+                    "stage": "TASK",
+                    "outcome": "SUCCESS",
+                    "summary": "ok",
+                }
+            ),
+            encoding="utf-8",
+        )
+        return AgentRunOutcome(
+            completed=True, timed_out=False, exit_code=0, stdout="", stderr=""
+        )
+
+
 class BuildAgentPromptTestCase(unittest.TestCase):
     def test_prompt_includes_role_template_context_and_protocol(self):
         context = {
@@ -117,6 +153,18 @@ class RunCurrentStageTestCase(unittest.TestCase):
 
         self.assertEqual(result["outcome"], "FAIL")
         self.assertIn("exited without producing", result["summary"])
+
+    def test_truncated_result_file_synthesizes_fail_result(self):
+        result = run_current_stage(TruncatedResultRunner(), timeout_seconds=5)
+
+        self.assertEqual(result["outcome"], "FAIL")
+        self.assertIn("unusable", result["summary"])
+
+    def test_timeout_seconds_propagated_to_runner(self):
+        runner = RecordingRunner()
+        run_current_stage(runner, timeout_seconds=42)
+
+        self.assertEqual(runner.received_timeout, 42)
 
 
 if __name__ == "__main__":

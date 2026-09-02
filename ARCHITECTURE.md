@@ -10,9 +10,9 @@ O projeto foi desenhado em torno de três camadas:
 |---|---|---|
 | **1. Harness Controller** | Controle determinístico de workflow (estado, transições, validação) | ✅ **Implementado** |
 | **2. Agent Runner** | Executar o agente de IA (construir prompt, invocar Claude Code, capturar resultado) | ✅ **Implementado** |
-| **3. Agent Roles** | Papéis lógicos (Maestro, Spec Engineer, Planner, Executor, Tester, Debugger, Reviewer, Documenter) | ⚠️ **Parcial** — apenas templates de prompt estáticos em `roles/*.md`; nenhum código os carrega ou invoca `[PLANEJADO — Fase 4]` |
+| **3. Agent Roles** | Papéis lógicos (Maestro, Spec Engineer, Planner, Executor, Tester, Debugger, Reviewer, Documenter) | ✅ **Implementado** |
 
-Hoje, o repositório implementa **apenas a Camada 1**. Um agente externo (humano ou script) produz manualmente os arquivos de resultado que a Camada 1 consome via `harness result`.
+Hoje, o repositório implementa as Camadas 1, 2 e 3. Um humano ainda dispara cada estágio manualmente — via `harness agent-run` (que invoca o Claude Code automaticamente e aplica o resultado) ou produzindo o arquivo de resultado à mão e rodando `harness result`. Não existe loop autônomo entre estágios ainda (Fase 8).
 
 ---
 
@@ -159,7 +159,7 @@ roles/
 └── documenter.md
 ```
 
-Esses arquivos descrevem o comportamento esperado de cada papel (ver `AGENTS.md`), mas **nada em `harness/` os lê, carrega ou usa** para construir prompts hoje — são artefatos de planejamento para a Fase 4 (Sistema de Papéis de Agente).
+Esses arquivos descrevem o comportamento esperado de cada papel (ver `AGENTS.md`) e já são carregados programaticamente por `harness/roles.py::load_role_prompt` e usados por `harness/controller.py::build_agent_prompt` para montar o prompt enviado ao Claude Code (Fase 6, Claude Code Runner).
 
 ## Scaffolding adicional presente mas não conectado
 
@@ -187,4 +187,4 @@ Executados com `python -m unittest discover -s tests -v`. Cada `TestCase` roda e
 
 ## Empacotamento
 
-`pyproject.toml`: build via `setuptools`, `requires-python = ">=3.10"`, sem dependências de runtime. `[project.scripts] harness = "harness.cli:main"`. `[tool.setuptools] packages = ["harness"]` (lista explícita — `tests/`, `roles/`, `config/`, `schemas/` não são empacotados).
+`pyproject.toml`: build via `setuptools`, `requires-python = ">=3.10"`, sem dependências de runtime. `[project.scripts] harness = "harness.cli:main"`. `[tool.setuptools] packages = ["harness", "harness.agents"]` (lista explícita — cada subpacote precisa estar listado; `tests/`, `roles/`, `config/`, `schemas/` não são empacotados).

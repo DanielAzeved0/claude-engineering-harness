@@ -15,4 +15,4 @@ authors = [
 harness = "harness.cli:main"
 
 [tool.setuptools]
-packages = ["harness"]
+packages = ["harness", "harness.agents"]

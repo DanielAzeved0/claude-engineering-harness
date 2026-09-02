@@ -81,6 +81,31 @@ class AgentRunCommandTestCase(unittest.TestCase):
             with self.assertRaises(SystemExit):
                 command_agent_run(args)
 
+    @patch("harness.cli.run_current_stage")
+    def test_agent_run_handles_agent_run_error(self, mock_run_current_stage):
+        from harness.agents.base import AgentRunError
+
+        mock_run_current_stage.side_effect = AgentRunError(
+            "Claude Code CLI not found."
+        )
+
+        args = argparse.Namespace(timeout=None)
+
+        with patch("sys.stdout", new_callable=StringIO):
+            with self.assertRaises(SystemExit):
+                command_agent_run(args)
+
+    def test_agent_run_subcommand_is_registered(self):
+        from harness.cli import build_parser
+        from harness.cli import command_agent_run as expected_func
+
+        parser = build_parser()
+        args = parser.parse_args(["agent-run"])
+
+        self.assertEqual(args.command, "agent-run")
+        self.assertIsNone(args.timeout)
+        self.assertIs(args.func, expected_func)
+
 
 if __name__ == "__main__":
     unittest.main()
