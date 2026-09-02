@@ -6,6 +6,11 @@ import json
 from pathlib import Path
 from typing import Any
 
+from harness.artifacts import (
+    EXECUTION_REPORT_PATH,
+    artifact_exists_for_stage,
+    generate_execution_report,
+)
 from harness.iteration import (
     increment_iteration,
     iteration_limit_exceeded,
@@ -61,6 +66,18 @@ def _apply_stage_transition(state: dict, outcome: str) -> tuple:
     return current_stage, next_stage
 
 
+def _write_execution_report_if_complete(state: dict) -> None:
+    if state["workflow"]["current_stage"] != "COMPLETE":
+        return
+
+    try:
+        EXECUTION_REPORT_PATH.write_text(
+            generate_execution_report(state), encoding="utf-8"
+        )
+    except (OSError, KeyError) as error:
+        print(f"Warning: could not write execution report: {error}")
+
+
 def transition(outcome: str) -> dict[str, Any]:
     """
     Apply a valid workflow transition triggered manually via the CLI.
@@ -84,6 +101,8 @@ def transition(outcome: str) -> dict[str, Any]:
     )
 
     save_state(state)
+
+    _write_execution_report_if_complete(state)
 
     return {
         "from": previous_stage,
@@ -164,6 +183,7 @@ def process_result_file(path) -> dict[str, Any]:
             "outcome": agent_result.outcome,
             "to": next_stage,
             "summary": agent_result.summary,
+            "artifact_present": artifact_exists_for_stage(state, agent_result.stage),
             "artifacts": agent_result.artifacts,
             "metadata": agent_result.metadata,
             "result_file": str(result_path),
@@ -172,6 +192,8 @@ def process_result_file(path) -> dict[str, Any]:
     )
 
     save_state(state)
+
+    _write_execution_report_if_complete(state)
 
     return {
         "agent": agent_result.agent,

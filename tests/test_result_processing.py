@@ -313,6 +313,108 @@ class ResultProcessingTestCase(unittest.TestCase):
         self.assertIsNotNone(state["loop_detection"]["last_root_cause_hash"])
         self.assertEqual(state["loop_detection"]["same_root_cause_count"], 1)
 
+    def test_artifact_present_recorded_in_history(self):
+        self._advance_to_testing()
+
+        result_path = self._write_result(
+            "tester-result.json",
+            {
+                "agent": "tester",
+                "stage": "TESTING",
+                "outcome": "FAIL",
+                "summary": "Simulated test failure",
+            },
+        )
+        process_result_file(result_path)
+
+        state = load_state()
+        history_entry = state["history"][-1]
+        self.assertIn("artifact_present", history_entry)
+        self.assertFalse(history_entry["artifact_present"])
+
+    def test_artifact_present_true_when_file_exists(self):
+        self._advance_to_testing()
+
+        Path(".harness/tests").mkdir(parents=True, exist_ok=True)
+        Path(".harness/tests/TEST_RESULTS.json").write_text("{}", encoding="utf-8")
+
+        result_path = self._write_result(
+            "tester-result.json",
+            {
+                "agent": "tester",
+                "stage": "TESTING",
+                "outcome": "FAIL",
+                "summary": "Simulated test failure",
+            },
+        )
+        process_result_file(result_path)
+
+        state = load_state()
+        self.assertTrue(state["history"][-1]["artifact_present"])
+
+    def test_execution_report_generated_on_complete(self):
+        start_task("T-7", "Task that completes")
+        transition("SUCCESS")  # TASK -> SPECIFICATION
+        transition("SUCCESS")  # SPECIFICATION -> PLANNING
+        transition("SUCCESS")  # PLANNING -> EXECUTION
+        transition("SUCCESS")  # EXECUTION -> TESTING
+        transition("PASS")     # TESTING -> REVIEW
+        transition("PASS")     # REVIEW -> DOCUMENTATION
+        transition("SUCCESS")  # DOCUMENTATION -> COMPLETE
+
+        report_path = Path(".harness/reports/EXECUTION_REPORT.md")
+        self.assertTrue(report_path.is_file())
+
+        content = report_path.read_text(encoding="utf-8")
+        self.assertIn("T-7", content)
+        self.assertIn("# Execution Report", content)
+
+    def test_execution_report_does_not_overwrite_final_report(self):
+        final_report_path = Path(".harness/reports/FINAL_REPORT.md")
+        final_report_path.parent.mkdir(parents=True, exist_ok=True)
+        final_report_path.write_text("DOCUMENTER content", encoding="utf-8")
+
+        start_task("T-8", "Task with documenter content")
+        transition("SUCCESS")  # TASK -> SPECIFICATION
+        transition("SUCCESS")  # SPECIFICATION -> PLANNING
+        transition("SUCCESS")  # PLANNING -> EXECUTION
+        transition("SUCCESS")  # EXECUTION -> TESTING
+        transition("PASS")     # TESTING -> REVIEW
+        transition("PASS")     # REVIEW -> DOCUMENTATION
+        transition("SUCCESS")  # DOCUMENTATION -> COMPLETE
+
+        self.assertEqual(
+            final_report_path.read_text(encoding="utf-8"), "DOCUMENTER content"
+        )
+        self.assertTrue(Path(".harness/reports/EXECUTION_REPORT.md").is_file())
+
+    def test_execution_report_generated_via_agent_result_includes_final_entry(self):
+        start_task("T-9", "Task completed via agent")
+        transition("SUCCESS")  # TASK -> SPECIFICATION
+        transition("SUCCESS")  # SPECIFICATION -> PLANNING
+        transition("SUCCESS")  # PLANNING -> EXECUTION
+        transition("SUCCESS")  # EXECUTION -> TESTING
+        transition("PASS")     # TESTING -> REVIEW
+        transition("PASS")     # REVIEW -> DOCUMENTATION
+
+        result_path = self._write_result(
+            "documenter-result.json",
+            {
+                "agent": "documenter",
+                "stage": "DOCUMENTATION",
+                "outcome": "SUCCESS",
+                "summary": "Final report written",
+            },
+        )
+        process_result_file(result_path)
+
+        report_path = Path(".harness/reports/EXECUTION_REPORT.md")
+        self.assertTrue(report_path.is_file())
+
+        content = report_path.read_text(encoding="utf-8")
+        self.assertIn("DOCUMENTATION -> COMPLETE", content)
+        self.assertIn("Final report written", content)
+
 
 if __name__ == "__main__":
     unittest.main()
