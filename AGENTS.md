@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> Descreve os papéis de agente (lógicos) do Claude Engineering Harness: suas responsabilidades, artefatos e limites. **Status atual: o mapeamento estágio → papel e o carregamento de templates já são código de produção** (`harness/roles.py`, exposto via `harness role`) — ver "Implementação atual dos papéis" abaixo. O que ainda não existe é a invocação automática de um agente de IA de verdade usando esse contexto; isso é trabalho da Fase 5 (`ROADMAP.md`), o Claude Code Runner. Este documento descreve tanto o comportamento já implementado quanto o *design pretendido* das fases seguintes.
+> Descreve os papéis de agente (lógicos) do Claude Engineering Harness: suas responsabilidades, artefatos e limites. **Status atual: o mapeamento estágio → papel e o carregamento de templates já são código de produção** (`harness/roles.py`, exposto via `harness role` — Fase 5 do `ROADMAP.md`, ✅ completa). O que ainda não existe é a invocação automática de um agente de IA de verdade usando esse contexto; isso é trabalho da Fase 6 (`ROADMAP.md`), o Claude Code Runner. Este documento descreve tanto o comportamento já implementado quanto o *design pretendido* das fases seguintes.
 
 ## Contrato fundamental entre agentes e o Harness
 
@@ -21,6 +21,8 @@ Campos obrigatórios: `agent`, `stage`, `outcome`, `summary` (strings não vazia
 
 **Regra inegociável:** um agente relata o outcome (`SUCCESS`/`FAIL`/`PASS`); ele **nunca** escolhe o próximo estágio. O Harness aplica a tabela de transições de `harness/transitions.py`. Nenhum papel — incluindo o Maestro — pode contornar isso.
 
+**Desde a Fase 3 (✅ completa), o Harness também pode sobrescrever o resultado da transição** — mesmo quando o agente reporta um outcome que normalmente continuaria o workflow — se `state.iteration.max` (10) for excedido ao entrar em `DIAGNOSIS`, ou se a mesma causa raiz se repetir 3+ vezes em diagnósticos consecutivos. Nos dois casos o Harness força `ESCALATED` em vez do próximo estágio esperado. Isso nunca aparece como erro pro agente que chamou `harness result` — o comando continua retornando normalmente, só que com `status: "ESCALATED"`.
+
 ## Papéis definidos (design; templates em `roles/*.md`)
 
 ### MAESTRO
@@ -39,7 +41,9 @@ Responsável pela implementação: modificar código-fonte, criar arquivos, inst
 Valida a implementação: rodar testes, build, lint, testes de aceitação; coletar falhas; produzir resultados estruturados. Outcome sempre um de `PASS`, `FAIL`, `BLOCKED`. Artefatos planejados: `.harness/tests/`. Template: `roles/tester.md`.
 
 ### DEBUGGER
-Diagnostica falhas: ler falhas de teste, inspecionar logs, identificar causa raiz, propor ou implementar correções, documentar o diagnóstico. Deve buscar a causa raiz em vez de aplicar correções aleatórias repetidamente — este papel é o principal consumidor futuro da Fase 3 (Iteration Engine / detecção de loop). Artefato planejado: `.harness/diagnosis/DIAGNOSIS.md`. Template: `roles/debugger.md`.
+Diagnostica falhas: ler falhas de teste, inspecionar logs, identificar causa raiz, propor ou implementar correções, documentar o diagnóstico. Deve buscar a causa raiz em vez de aplicar correções aleatórias repetidamente. Artefato planejado: `.harness/diagnosis/DIAGNOSIS.md`. Template: `roles/debugger.md`.
+
+**Contrato ativo com a Fase 3 (detecção de loop, ✅ completa):** ao reportar um resultado de `DIAGNOSIS` com outcome `SUCCESS` via `harness result`, inclua `metadata.root_cause` com um identificador curto e estável da causa raiz (o mesmo texto usado na seção "Root Cause" de `DIAGNOSIS.md` funciona bem). O Harness usa esse texto (hash normalizado por case/espaço) para detectar quando a mesma causa se repete — sem esse campo, ele cai no fallback do `summary`, que é menos preciso porque não foi desenhado pra ser um identificador estável. A seção "LOOP ANALYSIS" do template (`roles/debugger.md`) já pede pra comparar com iterações anteriores; `metadata.root_cause` é como essa observação chega até o Harness.
 
 ### REVIEWER
 Revisa a implementação após os testes passarem: qualidade de código, consistência arquitetural, aderência à especificação, segurança, manutenibilidade, potenciais regressões. Outcomes: `PASS`/`FAIL`. Artefato planejado: `.harness/review/REVIEW.md`. Template: `roles/reviewer.md`.
@@ -47,7 +51,7 @@ Revisa a implementação após os testes passarem: qualidade de código, consist
 ### DOCUMENTER
 Documentação final: atualizar README, documentar arquitetura, mudanças de API, configuração, decisões importantes; gerar o relatório final. Artefatos planejados: `.harness/documentation/`, `.harness/reports/FINAL_REPORT.md`. Template: `roles/documenter.md`.
 
-## Mapeamento estágio → papel responsável (planejado)
+## Mapeamento estágio → papel responsável
 
 | Estágio do workflow | Papel responsável |
 |---|---|
@@ -61,8 +65,12 @@ Documentação final: atualizar README, documentar arquitetura, mudanças de API
 | REVIEW | REVIEWER |
 | DOCUMENTATION | DOCUMENTER |
 
-Esse mapeamento já está codificado em `harness/roles.py` (`STAGE_ROLE_MAP`) e é consultável via `harness role`. O que falta é a Fase 5 (Claude Code Runner) invocar automaticamente um agente de IA de verdade usando esse contexto.
+Esse mapeamento já está codificado em `harness/roles.py` (`STAGE_ROLE_MAP`) e é consultável via `harness role`. O que falta é a Fase 6 (Claude Code Runner) invocar automaticamente um agente de IA de verdade usando esse contexto.
 
 ## Implementação atual dos papéis
 
-Hoje, `harness/roles.py` já faz a diferenciação de papel em código: mapeia estágio → papel (`STAGE_ROLE_MAP`), resolve o caminho do template (`get_role_template_path`) e carrega o conteúdo de `roles/*.md` programaticamente (`load_role_prompt`), montando o contexto do agente (`build_agent_context`). O comando `harness role` expõe esse mapeamento via CLI. O que ainda não existe é a execução automática: nenhum agente de IA de verdade é invocado com esse contexto — os papéis continuam sendo executados manualmente, por um humano ou por um script/agente externo ao Harness que produz o JSON de resultado e roda `harness result PATH`. Isso é trabalho da Fase 5 (Claude Code Runner).
+Hoje, `harness/roles.py` já faz a diferenciação de papel em código: mapeia estágio → papel (`STAGE_ROLE_MAP`), resolve o caminho do template (`get_role_template_path`, relativo ao pacote — funciona de qualquer diretório) e carrega o conteúdo de `roles/*.md` programaticamente (`load_role_prompt`), montando o contexto do agente (`build_agent_context`: papel, artefato esperado, task id/title, resumo do último resultado, iteração atual). O comando `harness role` expõe esse mapeamento via CLI — mostra o estágio atual, o papel responsável, o caminho do template e o artefato esperado, útil pra um operador humano saber qual papel/prompt usar manualmente enquanto a Fase 6 não existe.
+
+O que ainda não existe é a execução automática: nenhum agente de IA de verdade é invocado com esse contexto — os papéis continuam sendo executados manualmente, por um humano ou por um script/agente externo ao Harness que produz o JSON de resultado e roda `harness result PATH`. Isso é trabalho da Fase 6 (Claude Code Runner).
+
+Depois do fato, `harness history` (Fase 9, parcial) mostra a timeline de quais papéis agiram, em qual ordem, com qual resultado e resumo — útil pra auditar uma sessão de trabalho manual guiada pelos papéis.

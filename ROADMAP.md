@@ -29,21 +29,16 @@
 
 ## Fase 3 — Iteration Engine
 
-**Status: ⬜ NÃO INICIADO** (próxima fase recomendada)
+**Status: ✅ COMPLETO**
 
-Escopo planejado:
+- Funções puras de detecção de loop (`harness/iteration.py`): `increment_iteration`, `iteration_limit_exceeded`, `compute_root_cause_hash`, `register_root_cause`, `root_cause_repeated_too_often` (threshold = 3)
+- `harness/controller.py::_apply_stage_transition` agora recebe o `state` completo; ao entrar em `DIAGNOSIS` (convergência de `TESTING FAIL` e `EXECUTION FAIL`), incrementa `state.iteration.current` e força `ESCALATED` se ultrapassar `state.iteration.max` (10)
+- `process_result_file` registra a causa raiz (`metadata.root_cause`, com fallback pro `summary`) sempre que um resultado de `DIAGNOSIS` leva a `FIXING`; força `ESCALATED` se a mesma causa se repetir 3+ vezes
+- Os dois guards nunca lançam exceção — reescrevem o resultado da transição antes de persistir, populando `state.escalation.reason`
+- `start_task` reseta `state.escalation` (além de `iteration`/`loop_detection`), então uma tarefa nova nunca herda uma escalada de uma tarefa anterior
+- Testes automatizados (`tests/test_iteration.py` + casos novos em `tests/test_result_processing.py`)
 
-- Incrementar `state.iteration.current` a cada ciclo EXECUTION→TESTING→DIAGNOSIS→FIXING
-- Aplicar `state.iteration.max` como limite de tentativas
-- Rastreamento de causa raiz (`state.loop_detection.last_root_cause_hash`)
-- Detecção de falha repetida (`state.loop_detection.same_root_cause_count`)
-- Escalonamento automático para `ESCALATED` quando o limite ou o threshold de repetição forem atingidos
-
-**Nota de implementação:** os campos `iteration` e `loop_detection` **já existem no schema de estado** (`harness/state.py::DEFAULT_STATE`) e já são exibidos por `harness status`, mas nenhuma lógica os popula além do reset em `start_task`. Esta fase é sobre *usar* esses campos, não criá-los.
-
-**Bug latente que esta fase corrige:** o ciclo `FIXING → EXECUTION → TESTING → DIAGNOSIS → FIXING` em `harness/transitions.py` não tem limite hoje — sem esta fase, um agente pode ficar preso num loop infinito real, não hipotético.
-
-Objetivo: impedir loops de IA infinitos.
+**Objetivo alcançado:** o ciclo `FIXING → EXECUTION → TESTING → DIAGNOSIS → FIXING` que antes podia rodar indefinidamente agora tem um teto real, e diagnósticos que reportam a mesma causa repetidamente escalam em vez de tentar de novo às cegas.
 
 ## Fase 4 — Artifact and Report System
 
@@ -57,19 +52,14 @@ Objetivo: rastreabilidade completa de engenharia.
 
 ## Fase 5 — Agent Role System
 
-**Status: ⚠️ SCAFFOLDING PARCIAL — lógica não iniciada**
+**Status: ✅ COMPLETO** (mapeamento e carregamento — invocação automática é a Fase 6)
 
-Escopo planejado:
+- `harness/roles.py`: `STAGE_ROLE_MAP` (os 8 papéis carregados em código), `get_role_for_stage`, `get_role_template_path`, `load_role_prompt` (lê `roles/*.md` programaticamente), `build_agent_context` (contexto de agente: papel, artefato esperado, task id/title, resumo do último resultado, iteração atual)
+- `ROLES_DIR` resolve relativo ao pacote (`Path(__file__).resolve().parent.parent / "roles"`), não ao cwd — funciona de qualquer diretório
+- CLI: `harness role` — mostra estágio atual, papel responsável, caminho do template e artefato esperado; útil mesmo sem Runner, para um operador humano saber qual papel/prompt usar manualmente
+- Testes automatizados (`tests/test_roles.py`, `tests/test_cli_role.py`)
 
-- Definições de papel carregadas em código (Maestro, Spec Engineer, Planner, Executor, Tester, Debugger, Reviewer, Documenter)
-- Templates de prompt por papel
-- Mapeamento estágio → papel responsável
-- Requisitos de artefato por papel
-- Contexto de agente (o que cada papel recebe como entrada)
-
-**Nota de implementação:** os 8 templates de prompt em Markdown **já existem** em `roles/*.md` (conteúdo completo, escrito), mas **nenhum código Python os carrega, referencia ou usa** hoje. Esta fase conecta esses templates ao controlador.
-
-Objetivo: tornar o workflow dirigido por papel.
+**Objetivo alcançado:** o mapeamento estágio → papel e o carregamento de templates deixaram de ser só design documentado em `AGENTS.md` — são código de produção, consultável via `harness role`. O que ainda falta é a invocação automática de um agente de IA de verdade usando esse contexto (Fase 6, Claude Code Runner).
 
 ## Fase 6 — Claude Code Runner
 
@@ -77,7 +67,7 @@ Objetivo: tornar o workflow dirigido por papel.
 
 Escopo planejado: invocação do Claude Code, geração de prompt, monitoramento de execução, coleta de saída, geração de resultado estruturado (compatível com `harness/models.py::AgentResult`), tratamento de erro e timeout. Estrutura-alvo: `harness/agents/base.py`, `harness/agents/claude_code.py`.
 
-**Dependência:** consome o mapeamento estágio → papel da Fase 5. As duas fases são fortemente acopladas — sem o Runner, o Role System não pode ser validado ponta a ponta (nenhum agente real é invocado); mantidas como fases separadas para não violar a regra de uma fase por vez.
+**Dependência:** consome o mapeamento estágio → papel da Fase 5 (`harness/roles.py::build_agent_context`), **já implementada**. Esta é a próxima fase que de fato valida o Role System ponta a ponta — hoje nenhum agente real é invocado, `build_agent_context` só é consumido manualmente via `harness role`.
 
 Objetivo: permitir que o Harness invoque o Claude Code automaticamente.
 
@@ -103,9 +93,12 @@ Objetivo: loop de engenharia totalmente autônomo.
 
 ## Fase 9 — Observability
 
-**Status: ⬜ NÃO INICIADO**
+**Status: ⚠️ PARCIAL** — escopo reduzido deliberadamente ao que tem fonte de dados real hoje
 
-Possíveis funcionalidades: visualização de workflow, timeline, atividade de agente, histórico de iteração, falhas, métricas, duração, uso de tokens, estimativa de custo.
+- CLI: `harness history` — timeline legível de `state.history`: transição, outcome, agente, resumo, timestamp e duração calculada entre entradas consecutivas
+- Testes automatizados (`tests/test_cli_history.py`)
+
+**Fora de escopo por enquanto:** métricas de tokens/custo, atividade de agente em tempo real, dashboards. Não têm fonte de dados até a Fase 6 (Runner) existir e produzir uso real. Se alguma dessas funcionalidades virar prioridade, deve ser escopada explicitamente como incremento desta fase.
 
 ## Fase 10 — Maestri ou integração de UI
 
@@ -128,15 +121,16 @@ Possíveis funcionalidades: visualização de workflow/agente, monitoramento de 
 | `harness start TASK-ID "Título"` | ✅ Implementado |
 | `harness transition OUTCOME` | ✅ Implementado |
 | `harness result PATH` | ✅ Implementado |
+| `harness role` | ✅ Implementado (Fase 5) |
+| `harness history` | ✅ Implementado (Fase 9, parcial) |
 | `harness run` | ⬜ Planejado (Fase 8) |
 | `harness resume` | ⬜ Planejado |
 | `harness reset` | ⬜ Planejado |
-| `harness history` | ⬜ Planejado |
 | `harness artifacts` | ⬜ Planejado (Fase 4) |
 | `harness doctor` | ⬜ Planejado |
-| `harness agent run ROLE` | ⬜ Planejado (Fase 5/6) |
+| `harness agent run ROLE` | ⬜ Planejado (Fase 6) |
 | `harness test` / `harness diagnose` / `harness document` / `harness config` | ⬜ Planejado |
 
 ## Próximo passo recomendado
 
-**Fase 3 — Iteration Engine.** É a lacuna mais próxima do núcleo determinístico já implementado (não depende de invocar um agente de IA de verdade, apenas de lógica de controle sobre o estado existente), e é um pré-requisito de segurança (princípio "Sem loops infinitos") antes de avançar para papéis de agente (Fase 5) ou execução autônoma (Fase 6/8). Corrige um bug latente real: o ciclo de retry hoje não tem limite.
+**Fase 4 — Artifact and Report System.** Fases 3, 5 e 9 (parcial) foram implementadas em paralelo (ver commits `e25e282`..`ab43be8` em `main`) fora da ordem estritamente sequencial deste roadmap — eram independentes o suficiente pra isso (ver mapa de arquivos tocados por cada uma, sem sobreposição real). A Fase 4 continua sendo a próxima recomendada: é de baixo risco, quase independente das demais, e desbloqueia rastreabilidade completa antes da Fase 6 (Claude Code Runner), que é a peça que realmente aumenta a superfície de risco do projeto (primeira vez que o Harness invoca algo externo automaticamente).
