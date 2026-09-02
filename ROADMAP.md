@@ -42,13 +42,17 @@
 
 ## Fase 4 — Artifact and Report System
 
-**Status: ⬜ NÃO INICIADO**
+**Status: ✅ COMPLETO**
 
-`state.artifacts` já mapeia caminhos esperados (`TASK.md`, `SPEC.md`, `PLAN.md`, etc.) e os diretórios `.harness/*/` já são criados automaticamente, mas nenhum código ainda escreve esses arquivos.
+- `harness/artifacts.py`: `artifact_exists_for_stage`, `list_artifact_status` (reaproveita `harness.roles.STAGE_ARTIFACT_KEY`, sem duplicar o mapeamento), `generate_execution_report` — função pura que compila `state.history` num relatório markdown mecânico
+- `process_result_file` grava `artifact_present: bool` em cada entrada de histórico de resultado de agente
+- Ao chegar em `COMPLETE` (por `harness transition` manual ou por resultado de agente), o Harness gera `.harness/reports/EXECUTION_REPORT.md` automaticamente — deliberadamente separado de `.harness/reports/FINAL_REPORT.md` (entregável narrativo do papel DOCUMENTER, nunca sobrescrito; verificado em revisão que só existem dois pontos de escrita em todo `harness/`: `state.json` e o relatório de execução)
+- A escrita do relatório roda depois de `save_state()` (garante que o diretório existe e que o histórico já inclui a própria transição final) e nunca bloqueia a transição — falha de I/O só emite aviso
+- CLI: `harness artifacts` — lista os 9 estágios com papel, caminho esperado e se existe no disco agora
+- Validação é só informativa, não bloqueia nenhuma transição (o objetivo é rastreabilidade, não enforcement)
+- Testes automatizados (`tests/test_artifacts.py`, `tests/test_cli_artifacts.py`, casos novos em `tests/test_result_processing.py`)
 
-**Reordenada para antes do Role System e do Runner** (era Fase 8): é de baixo risco e quase independente das demais fases — os paths já existem em `state["artifacts"]`, só falta escrever os arquivos — e desbloqueia rastreabilidade completa antes mesmo de existirem agentes reais.
-
-Objetivo: rastreabilidade completa de engenharia.
+**Objetivo alcançado:** a qualquer momento dá pra saber quais artefatos esperados existem de verdade, e toda execução completa deixa um relatório mecânico e preciso — sem depender de nenhum agente lembrar de escrevê-lo.
 
 ## Fase 5 — Agent Role System
 
@@ -123,14 +127,14 @@ Possíveis funcionalidades: visualização de workflow/agente, monitoramento de 
 | `harness result PATH` | ✅ Implementado |
 | `harness role` | ✅ Implementado (Fase 5) |
 | `harness history` | ✅ Implementado (Fase 9, parcial) |
+| `harness artifacts` | ✅ Implementado (Fase 4) |
 | `harness run` | ⬜ Planejado (Fase 8) |
 | `harness resume` | ⬜ Planejado |
 | `harness reset` | ⬜ Planejado |
-| `harness artifacts` | ⬜ Planejado (Fase 4) |
 | `harness doctor` | ⬜ Planejado |
 | `harness agent run ROLE` | ⬜ Planejado (Fase 6) |
 | `harness test` / `harness diagnose` / `harness document` / `harness config` | ⬜ Planejado |
 
 ## Próximo passo recomendado
 
-**Fase 4 — Artifact and Report System.** Fases 3, 5 e 9 (parcial) foram implementadas em paralelo (ver commits `e25e282`..`ab43be8` em `main`) fora da ordem estritamente sequencial deste roadmap — eram independentes o suficiente pra isso (ver mapa de arquivos tocados por cada uma, sem sobreposição real). A Fase 4 continua sendo a próxima recomendada: é de baixo risco, quase independente das demais, e desbloqueia rastreabilidade completa antes da Fase 6 (Claude Code Runner), que é a peça que realmente aumenta a superfície de risco do projeto (primeira vez que o Harness invoca algo externo automaticamente).
+**Fase 6 — Claude Code Runner.** Fases 3, 4, 5 e 9 (parcial) estão completas (ver commits `e25e282`..`f5e09d0` em `main`) — as Fases 3, 5 e 9 foram implementadas em paralelo fora da ordem estritamente sequencial deste roadmap (eram independentes o suficiente), e a Fase 4 fechou logo em seguida. A Fase 6 é a peça que de fato aumenta a superfície de risco do projeto (primeira vez que o Harness invoca algo externo automaticamente), mas também é o que desbloqueia validar o Role System (Fase 5) e o Artifact System (Fase 4) ponta a ponta pela primeira vez — hoje os dois só são exercitados manualmente.
