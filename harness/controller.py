@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from harness.agents.base import AgentRunner
 from harness.artifacts import (
     EXECUTION_REPORT_PATH,
     artifact_exists_for_stage,
@@ -18,8 +19,9 @@ from harness.iteration import (
     root_cause_repeated_too_often,
 )
 from harness.models import parse_agent_result
+from harness.roles import build_agent_context, load_role_prompt
 from harness.state import load_state, now_iso, save_state
-from harness.transitions import TERMINAL_STAGES, get_next_stage
+from harness.transitions import TERMINAL_STAGES, get_allowed_outcomes, get_next_stage
 
 
 def _apply_stage_transition(state: dict, outcome: str) -> tuple:
@@ -264,3 +266,75 @@ def start_task(task_id: str, title: str) -> dict[str, Any]:
     save_state(state)
 
     return state
+
+
+DEFAULT_AGENT_TIMEOUT_SECONDS = 1800
+
+
+def build_agent_prompt(context: dict, role_prompt: str, result_path: Path) -> str:
+    allowed_outcomes = get_allowed_outcomes(context["stage"])
+
+    return (
+        f"{role_prompt}\n\n"
+        "## Harness Context\n\n"
+        f"- Task ID: {context['task_id']}\n"
+        f"- Task Title: {context['task_title']}\n"
+        f"- Stage: {context['stage']}\n"
+        f"- Iteration: {context['iteration']}\n"
+        f"- Last result summary: {context['last_result_summary']}\n\n"
+        "## Harness Result Protocol\n\n"
+        "When you finish this role's work, write a JSON file to exactly "
+        f"this path: {result_path}\n\n"
+        "The JSON must have this shape:\n\n"
+        "{\n"
+        '  "agent": "<your role, lowercase>",\n'
+        f'  "stage": "{context["stage"]}",\n'
+        f'  "outcome": "<one of: {", ".join(allowed_outcomes)}>",\n'
+        '  "summary": "<one-line summary of what happened>",\n'
+        '  "artifacts": ["<paths of files you created or modified>"],\n'
+        '  "metadata": {}\n'
+        "}\n\n"
+        "You report the outcome. You do NOT choose or execute the next "
+        "workflow stage — the Harness applies the transition "
+        "deterministically based on what you report."
+    )
+
+
+def run_current_stage(
+    runner: AgentRunner, timeout_seconds: int = DEFAULT_AGENT_TIMEOUT_SECONDS
+) -> dict[str, Any]:
+    state = load_state()
+    context = build_agent_context(state)
+    role_prompt = load_role_prompt(context["role"])
+
+    result_path = Path(
+        f".harness/results/{context['stage'].lower()}-"
+        f"{now_iso().replace(':', '-')}.json"
+    )
+
+    prompt = build_agent_prompt(context, role_prompt, result_path)
+
+    outcome = runner.run(prompt, timeout_seconds)
+
+    if not result_path.is_file():
+        if outcome.timed_out:
+            reason = f"timed out after {timeout_seconds}s"
+        else:
+            reason = (
+                "exited without producing a result file "
+                f"(exit_code={outcome.exit_code})"
+            )
+
+        fallback = {
+            "agent": context["role"].lower(),
+            "stage": context["stage"],
+            "outcome": "FAIL",
+            "summary": f"Agent {reason}.",
+            "metadata": {
+                "stdout_tail": outcome.stdout[-2000:],
+                "stderr_tail": outcome.stderr[-2000:],
+            },
+        }
+        result_path.write_text(json.dumps(fallback), encoding="utf-8")
+
+    return process_result_file(result_path)
