@@ -30,7 +30,7 @@ O sistema deve eventualmente permitir que um usuário forneça um pedido de alto
 
 O agente de codificação primário deste projeto é o **Claude Code**, tratado como o agente de execução principal. Agentes futuros possíveis: Codex, Cursor, Aider, outros agentes OpenAI, agentes locais customizados.
 
-O controlador deve, no entanto, ser **independente de agente** — a arquitetura separa `HARNESS CONTROLLER` de `AGENT RUNNER` para permitir trocar a implementação do agente no futuro. **Hoje não existe nenhum `AGENT RUNNER` implementado** (nenhuma invocação automática de Claude Code ou de qualquer outro agente); veja `ARCHITECTURE.md`.
+O controlador deve, no entanto, ser **independente de agente** — a arquitetura separa `HARNESS CONTROLLER` de `AGENT RUNNER` para permitir trocar a implementação do agente no futuro. O `AGENT RUNNER` já está implementado (`harness/agents/`, comando `harness agent-run`) com uma interface abstrata (`AgentRunner`) e uma primeira implementação concreta (`ClaudeCodeRunner`); veja `ARCHITECTURE.md`.
 
 ## Princípio de design fundamental
 

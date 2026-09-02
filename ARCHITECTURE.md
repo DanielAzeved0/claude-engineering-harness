@@ -9,7 +9,7 @@ O projeto foi desenhado em torno de três camadas:
 | Camada | Responsabilidade | Status |
 |---|---|---|
 | **1. Harness Controller** | Controle determinístico de workflow (estado, transições, validação) | ✅ **Implementado** |
-| **2. Agent Runner** | Executar o agente de IA (construir prompt, invocar Claude Code, capturar resultado) | ❌ **Não implementado** `[PLANEJADO — Fase 5]` |
+| **2. Agent Runner** | Executar o agente de IA (construir prompt, invocar Claude Code, capturar resultado) | ✅ **Implementado** |
 | **3. Agent Roles** | Papéis lógicos (Maestro, Spec Engineer, Planner, Executor, Tester, Debugger, Reviewer, Documenter) | ⚠️ **Parcial** — apenas templates de prompt estáticos em `roles/*.md`; nenhum código os carrega ou invoca `[PLANEJADO — Fase 4]` |
 
 Hoje, o repositório implementa **apenas a Camada 1**. Um agente externo (humano ou script) produz manualmente os arquivos de resultado que a Camada 1 consome via `harness result`.
@@ -127,18 +127,21 @@ Os subdiretórios são criados vazios; nenhum código ainda escreve artefatos Ma
 
 ---
 
-## Camada 2 — Agent Runner `[PLANEJADO — não implementado]`
-
-Estrutura-alvo (nenhum destes arquivos existe hoje):
+## Camada 2 — Agent Runner `[IMPLEMENTADO]`
 
 ```text
 harness/
 ├── agents/
+│   ├── __init__.py
 │   ├── base.py
 │   └── claude_code.py
 ```
 
-Responsabilidade prevista: construir prompt, fornecer contexto do projeto, invocar Claude Code, aguardar execução, capturar saída/artefatos, produzir um arquivo de resultado estruturado (o mesmo formato validado por `harness/models.py`) e devolver o controle ao Harness. O runner **não decide transições** — apenas executa o papel solicitado.
+`harness/agents/base.py` define `AgentRunner` (ABC) e `AgentRunOutcome` — interface intencionalmente independente de qualquer agente específico (princípio "independência de agente", ver acima). `harness/agents/claude_code.py::ClaudeCodeRunner` é a primeira implementação: invoca o CLI `claude` via `subprocess` em modo não-interativo (`-p`, `--output-format json`, `--dangerously-skip-permissions` — necessário porque uma sessão headless não tem como aprovar ações interativamente).
+
+`harness/controller.py::build_agent_prompt` monta o prompt (template do papel + contexto + instruções explícitas do Agent Result Protocol) e `run_current_stage(runner)` orquestra: monta o prompt, invoca `runner.run(...)`, lê o arquivo de resultado que o agente deveria ter escrito, e processa via `process_result_file` (reaproveitado, sem duplicar lógica de transição). Se o agente travar, estourar timeout, ou nunca escrever o resultado esperado, `run_current_stage` sintetiza um resultado `FAIL` automaticamente — o workflow nunca fica travado esperando algo que não vai chegar. O runner **não decide transições** — apenas executa o papel solicitado.
+
+CLI: `harness agent-run` (sem loop automático — um humano dispara uma vez por estágio; o loop autônomo é a Fase 8).
 
 ## Camada 3 — Agent Roles `[PARCIAL — apenas templates estáticos]`
 

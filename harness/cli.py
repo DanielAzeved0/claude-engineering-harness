@@ -6,8 +6,16 @@ import argparse
 import sys
 from datetime import datetime
 
+from harness.agents.base import AgentRunError
+from harness.agents.claude_code import ClaudeCodeRunner
 from harness.artifacts import list_artifact_status
-from harness.controller import process_result_file, start_task, transition
+from harness.controller import (
+    DEFAULT_AGENT_TIMEOUT_SECONDS,
+    process_result_file,
+    run_current_stage,
+    start_task,
+    transition,
+)
 from harness.roles import build_agent_context, get_role_template_path
 from harness.state import initialize_state, load_state
 from harness.transitions import get_allowed_outcomes
@@ -128,6 +136,28 @@ def command_artifacts(_: argparse.Namespace) -> None:
         marker = "present" if status["exists"] else "missing"
         print(f"{status['stage']} ({status['role']}): {status['path']} [{marker}]")
 
+    print()
+
+
+def command_agent_run(args: argparse.Namespace) -> None:
+    timeout = args.timeout if args.timeout else DEFAULT_AGENT_TIMEOUT_SECONDS
+
+    try:
+        result = run_current_stage(ClaudeCodeRunner(), timeout_seconds=timeout)
+    except (FileNotFoundError, ValueError, AgentRunError) as error:
+        print(f"Error: {error}")
+        sys.exit(1)
+
+    print()
+    print(f"Agent: {result['agent']}")
+    print(f"Stage: {result['from']}")
+    print(f"Outcome: {result['outcome']}")
+    print(f"Summary: {result['summary']}")
+    print()
+    print("Transition:")
+    print(f"  {result['from']} -> {result['to']} (via {result['outcome']})")
+    print()
+    print(f"Workflow status: {result['status']}")
     print()
 
 
@@ -308,6 +338,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="Show expected artifacts and whether they exist on disk",
     )
     artifacts_parser.set_defaults(func=command_artifacts)
+
+    agent_run_parser = subparsers.add_parser(
+        "agent-run",
+        help="Invoke Claude Code automatically for the current stage's role",
+    )
+    agent_run_parser.add_argument(
+        "--timeout",
+        type=int,
+        default=None,
+        help=f"Timeout in seconds (default: {DEFAULT_AGENT_TIMEOUT_SECONDS})",
+    )
+    agent_run_parser.set_defaults(func=command_agent_run)
 
     return parser
 
