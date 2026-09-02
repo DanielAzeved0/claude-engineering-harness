@@ -6,6 +6,7 @@ import argparse
 import sys
 from datetime import datetime
 
+from harness.artifacts import list_artifact_status
 from harness.controller import process_result_file, start_task, transition
 from harness.roles import build_agent_context, get_role_template_path
 from harness.state import initialize_state, load_state
@@ -108,6 +109,24 @@ def command_history(_: argparse.Namespace) -> None:
 
     for line in _format_history(history):
         print(line)
+
+    print()
+
+
+def command_artifacts(_: argparse.Namespace) -> None:
+    try:
+        state = load_state()
+    except FileNotFoundError as error:
+        print(f"Error: {error}")
+        sys.exit(1)
+
+    print()
+    print("Artifacts")
+    print("=" * 32)
+
+    for status in list_artifact_status(state):
+        marker = "present" if status["exists"] else "missing"
+        print(f"{status['stage']} ({status['role']}): {status['path']} [{marker}]")
 
     print()
 
@@ -283,6 +302,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Show workflow history timeline",
     )
     history_parser.set_defaults(func=command_history)
+
+    artifacts_parser = subparsers.add_parser(
+        "artifacts",
+        help="Show expected artifacts and whether they exist on disk",
+    )
+    artifacts_parser.set_defaults(func=command_artifacts)
 
     return parser
 
